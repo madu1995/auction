@@ -27,8 +27,15 @@ export default function Home() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !phone.trim() || phone.length < 9) {
-      setError("Please enter a valid name and phone number.");
+    const cleanPhoneInput = phone.replace(/[^0-9]/g, ""); // Keep only digits
+
+    if (!name.trim()) {
+      setError("Please enter a valid name.");
+      return;
+    }
+
+    if (cleanPhoneInput.length !== 10) {
+      setError("Please enter exactly 10 digits for your phone number.");
       return;
     }
 
@@ -36,9 +43,7 @@ export default function Home() {
     setError("");
 
     try {
-      // Clean phone number (alphanumeric only)
-      const cleanPhone = phone.replace(/[^0-9+]/g, "");
-      const userRef = ref(db, `members/${cleanPhone}`);
+      const userRef = ref(db, `members/${cleanPhoneInput}`);
       const snapshot = await get(userRef);
 
       if (snapshot.exists()) {
@@ -49,7 +54,7 @@ export default function Home() {
         // Create new user
         const newUser = {
           name: name.trim(),
-          phone: cleanPhone,
+          phone: cleanPhoneInput,
           drawnNumber: null,
           drawnAt: null,
         };
@@ -78,9 +83,9 @@ export default function Home() {
 
         <div className="text-center mb-8">
           <h1 className="text-4xl font-black font-outfit mb-2 text-white">
-            Auction <span className="gradient-text">Seettu</span>
+            Online <span className="gradient-text">Seettu</span>
           </h1>
-          <p className="text-surface-700 dark:text-gray-400">Join the live lottery secure draw</p>
+          <p className="text-surface-700 dark:text-gray-400">Join the online secure draw</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
@@ -112,8 +117,12 @@ export default function Home() {
               <input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Phone Number"
+                onChange={(e) => {
+                  // Keep only digits and restrict to exactly 10 characters max
+                  const val = e.target.value.replace(/[^0-9]/g, "");
+                  if (val.length <= 10) setPhone(val);
+                }}
+                placeholder="Phone Number (10 Digits)"
                 className="w-full pl-12 pr-4 py-4 bg-surface-900/50 border border-white/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-500 text-white placeholder-gray-500 transition-all font-medium"
                 required
               />
@@ -142,6 +151,17 @@ export default function Home() {
             )}
           </button>
         </form>
+
+        {/* Small Admin Link at bottom */}
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            onClick={() => router.push("/admin")}
+            className="text-surface-500 hover:text-white text-sm transition-colors flex items-center justify-center gap-1 mx-auto"
+          >
+            Go to Admin Panel
+          </button>
+        </div>
       </motion.div>
     </div>
   );

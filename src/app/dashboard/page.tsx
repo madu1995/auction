@@ -69,6 +69,9 @@ export default function Dashboard() {
         setError("");
 
         try {
+            // Add a 2-second artificial loading delay
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
             const stateRef = ref(db, 'drawState');
 
             const transactionResult = await runTransaction(stateRef, (state) => {
@@ -184,7 +187,7 @@ export default function Dashboard() {
                         animate={{ scale: 1, opacity: 1 }}
                         className="text-center"
                     >
-                        <h2 className="text-xl font-medium text-surface-400 mb-4 uppercase tracking-widest">Your Lucky Number</h2>
+                        <h2 className="text-xl font-medium text-surface-400 mb-4 uppercase tracking-widest">Your Number</h2>
                         <div className="w-48 h-48 mx-auto flex items-center justify-center bg-gradient-to-br from-brand-600 to-accent-500 rounded-full shadow-[0_0_60px_-10px_rgba(236,72,153,0.5)] border-4 border-white/20">
                             <span className="text-7xl font-black font-outfit text-white drop-shadow-lg">{user.drawnNumber}</span>
                         </div>
@@ -238,7 +241,9 @@ export default function Dashboard() {
                                     </div>
                                     <div>
                                         <p className="font-semibold text-white leading-tight">{member.name}</p>
-                                        <p className="text-xs text-surface-500 mt-1">{member.phone}</p>
+                                        <p className="text-xs text-surface-500 mt-1">
+                                            {member.drawnAt ? new Date(member.drawnAt).toLocaleString() : "Waiting for draw..."}
+                                        </p>
                                     </div>
                                 </div>
 
