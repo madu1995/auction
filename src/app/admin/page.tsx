@@ -14,8 +14,10 @@ export default function AdminPanel() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [members, setMembers] = useState<any[]>([]);
-    const [settings, setSettings] = useState({ memberCount: 12 });
+    const [settings, setSettings] = useState({ memberCount: 12, currentRound: 1 });
     const [newCount, setNewCount] = useState(12);
+    const [history, setHistory] = useState<any>(null);
+    const [viewingHistory, setViewingHistory] = useState<string | null>(null);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -27,11 +29,21 @@ export default function AdminPanel() {
         const unsubSettings = onValue(settingsRef, (snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.val();
-                setSettings(data);
-                setNewCount(data.memberCount);
+                setSettings({
+                    memberCount: data.memberCount || 12,
+                    currentRound: data.currentRound || 1
+                });
+                setNewCount(data.memberCount || 12);
             } else {
                 // Initialize settings if missing
-                set(settingsRef, { memberCount: 12 });
+                set(settingsRef, { memberCount: 12, currentRound: 1 });
+            }
+        });
+
+        const historyRef = ref(db, "history");
+        const unsubHistory = onValue(historyRef, (snapshot) => {
+            if (snapshot.exists()) {
+                setHistory(snapshot.val());
             }
         });
 
@@ -75,6 +87,7 @@ export default function AdminPanel() {
         return () => {
             unsubSettings();
             unsubMembers();
+            unsubHistory();
         };
     }, [isAuthenticated]);
 
@@ -101,6 +114,53 @@ export default function AdminPanel() {
             setError("");
         } catch {
             setError("Failed to update settings.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const startNewRound = async () => {
+        if (!confirm(`Are you sure you want to end Round ${settings.currentRound} and start a new one? Current results will be archived.`)) return;
+        setLoading(true);
+        try {
+            const currentRound = settings.currentRound;
+
+            // 1. Archive current members to history
+            const roundData = {
+                timestamp: Date.now(),
+                members: members.filter(m => m.drawnNumber !== null),
+                totalSlots: settings.memberCount
+            };
+            await set(ref(db, `history/round_${currentRound}`), roundData);
+
+            // 2. Increment round number
+            await update(ref(db, "settings"), { currentRound: (currentRound || 1) + 1 });
+
+            // 3. Reset drawState (Keep Admin)
+            await set(ref(db, "drawState"), {
+                assignedNumbers: { "1": "admin" },
+                lastAssignedTo: "admin",
+                lastAssignedNumber: 1
+            });
+
+            // 4. Remove all members except Admin
+            const adminMember = members.find(m => m.phone === "admin");
+            const newMembersNode = {
+                admin: {
+                    name: adminMember?.name || "Admin",
+                    phone: "admin",
+                    drawnNumber: 1,
+                    drawnAt: Date.now()
+                }
+            };
+
+            // Overwrite the members node with only the admin
+            await set(ref(db, "members"), newMembersNode);
+
+            alert(`Round ${currentRound} archived. Round ${currentRound + 1} started!`);
+        } catch (err) {
+            console.error(err);
+            setError("Failed to start new round.");
         } finally {
             setLoading(false);
         }
@@ -162,6 +222,69 @@ export default function AdminPanel() {
         }
     };
 
+    const deleteRound = async (roundKey: string) => {
+        if (!confirm(`Are you sure you want to permanently delete the records for ${roundKey.replace('_', ' ')}?`)) return;
+        setLoading(true);
+        try {
+            await remove(ref(db, `history/${roundKey}`));
+            if (viewingHistory === roundKey) {
+                setViewingHistory(null);
+            }
+        } catch {
+            setError("Failed to delete round record.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const clearAllData = async () => {
+        const pass = prompt("DANGER: Enter Admin Password to clear EVERYTHING (History, Members, Settings) and reset to Round 1:");
+        const adminPass = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "admin123";
+
+        if (pass !== adminPass) {
+            if (pass !== null) alert("Incorrect password. Operation cancelled.");
+            return;
+        }
+
+        if (!confirm("FINAL WARNING: This will permanently delete ALL data including history. This cannot be undone. Are you sure?")) return;
+
+        setLoading(true);
+        try {
+            // 1. Wipe History
+            await remove(ref(db, "history"));
+
+            // 2. Clear Draw State (Keep Admin)
+            await set(ref(db, "drawState"), {
+                assignedNumbers: { "1": "admin" },
+                lastAssignedTo: "admin",
+                lastAssignedNumber: 1
+            });
+
+            // 3. Reset Settings to Round 1
+            await set(ref(db, "settings"), { memberCount: 12, currentRound: 1 });
+
+            // 4. Wipe members EXCEPT Admin
+            const adminMember = members.find(m => m.phone === "admin");
+            const newMembersNode = {
+                admin: {
+                    name: adminMember?.name || "Admin",
+                    phone: "admin",
+                    drawnNumber: 1,
+                    drawnAt: Date.now()
+                }
+            };
+            await set(ref(db, "members"), newMembersNode);
+
+            alert("System has been fully reset to Round 1.");
+            setViewingHistory(null);
+        } catch (err) {
+            console.error(err);
+            setError("Failed to clear system data.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     if (!isAuthenticated) {
         return (
             <div className="w-full max-w-sm mx-auto">
@@ -208,17 +331,35 @@ export default function AdminPanel() {
                         <Settings className="text-brand-500" />
                         Admin <span className="gradient-text">Console</span>
                     </h1>
-                    <p className="text-surface-400">Total System Control</p>
+                    <p className="text-surface-400">Round {settings.currentRound} in progress</p>
                 </div>
 
-                <button
-                    onClick={resetDraw}
-                    disabled={loading}
-                    className="flex items-center gap-2 px-6 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl transition-colors text-red-500 font-bold active:scale-95"
-                >
-                    <RotateCcw className={cn("w-5 h-5", loading && "animate-spin")} />
-                    Reset Entire Draw
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={startNewRound}
+                        disabled={loading}
+                        className="flex items-center gap-2 px-6 py-3 bg-brand-500 hover:bg-brand-400 rounded-xl transition-all text-white font-bold shadow-lg shadow-brand-500/20 active:scale-95"
+                    >
+                        <Users className="w-5 h-5" />
+                        New Round
+                    </button>
+                    <button
+                        onClick={clearAllData}
+                        disabled={loading}
+                        className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-500 rounded-xl transition-all text-white font-bold shadow-lg shadow-red-500/20 active:scale-95"
+                    >
+                        <Trash2 className="w-5 h-5" />
+                        Clear All
+                    </button>
+                    <button
+                        onClick={resetDraw}
+                        disabled={loading}
+                        className="flex items-center gap-2 px-4 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl transition-colors text-red-500 font-bold active:scale-95"
+                        title="Reset Current Round"
+                    >
+                        <RotateCcw className={cn("w-5 h-5", loading && "animate-spin")} />
+                    </button>
+                </div>
             </header>
 
             {error && (
@@ -328,6 +469,79 @@ export default function AdminPanel() {
                                 </div>
                             )}
                         </div>
+                    </div>
+                </div>
+                {/* History Panel */}
+                <div className="lg:col-span-1 space-y-6">
+                    <div className="glass-panel p-6 rounded-3xl border-t-4 border-t-accent-500">
+                        <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                            <RotateCcw className="text-surface-400 w-5 h-5" />
+                            Round History
+                        </h2>
+
+                        <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                            {history ? (
+                                Object.keys(history).reverse().map((roundKey) => (
+                                    <div key={roundKey} className="relative group">
+                                        <button
+                                            onClick={() => setViewingHistory(viewingHistory === roundKey ? null : roundKey)}
+                                            className={cn(
+                                                "w-full text-left p-4 rounded-2xl border transition-all pr-12",
+                                                viewingHistory === roundKey
+                                                    ? "bg-brand-500/10 border-brand-500/50"
+                                                    : "bg-surface-900/50 border-white/5 hover:border-white/10"
+                                            )}
+                                        >
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-white font-bold capitalize">{roundKey.replace('_', ' ')}</span>
+                                                <span className="text-xs text-surface-500">
+                                                    {new Date(history[roundKey].timestamp).toLocaleDateString()}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm text-surface-400">
+                                                {history[roundKey].members?.length || 0} participants
+                                            </p>
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                deleteRound(roundKey);
+                                            }}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-red-500/50 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                            title="Delete History Record"
+                                        >
+                                            <Trash2 className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-surface-500 text-center py-4 text-sm">No history yet.</p>
+                            )}
+                        </div>
+
+                        {/* Round Detail Modal-like view */}
+                        <AnimatePresence>
+                            {viewingHistory && history && history[viewingHistory] && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    className="mt-6 pt-6 border-t border-white/10"
+                                >
+                                    <h3 className="text-sm font-bold text-white mb-4 uppercase tracking-wider">Round Results</h3>
+                                    <div className="space-y-2">
+                                        {(history[viewingHistory].members || [])
+                                            .sort((a: any, b: any) => (a.drawnNumber || 0) - (b.drawnNumber || 0))
+                                            .map((m: any) => (
+                                                <div key={m.phone} className="flex justify-between items-center p-2 bg-surface-900/30 rounded-lg text-sm">
+                                                    <span className="text-surface-400">{m.name}</span>
+                                                    <span className="text-brand-400 font-bold">#{m.drawnNumber}</span>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
             </div>
