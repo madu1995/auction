@@ -6,8 +6,7 @@ import { ref, onValue, runTransaction, update } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Confetti } from "@/components/Confetti";
-import { LogOut, RefreshCw, Trophy, History } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { LogOut, RefreshCw, Trophy } from "lucide-react";
 
 export default function Dashboard() {
     const router = useRouter();
@@ -19,8 +18,6 @@ export default function Dashboard() {
     const [drawing, setDrawing] = useState(false);
     const [error, setError] = useState("");
     const [showConfetti, setShowConfetti] = useState(false);
-    const [history, setHistory] = useState<any>(null);
-    const [viewingHistory, setViewingHistory] = useState<string | null>(null);
 
     useEffect(() => {
         const userData = localStorage.getItem("auction_user");
@@ -48,14 +45,7 @@ export default function Dashboard() {
 
                 // Always up-to-date user instance
                 const currentUser = memberList.find(m => m.phone === JSON.parse(userData).phone);
-                if (currentUser) {
-                    setUser(currentUser);
-                } else if (JSON.parse(userData).phone !== "admin") {
-                    // Logic to handle if user was removed (e.g., New Round started)
-                    localStorage.removeItem("auction_user");
-                    router.push("/");
-                    return;
-                }
+                if (currentUser) setUser(currentUser);
 
                 setMembers(memberList.sort((a, b) => {
                     // Sort by number, then unassigned
@@ -67,17 +57,9 @@ export default function Dashboard() {
             }
         });
 
-        const historyRef = ref(db, "history");
-        const unsubHistory = onValue(historyRef, (snapshot) => {
-            if (snapshot.exists()) {
-                setHistory(snapshot.val());
-            }
-        });
-
         return () => {
             unsubSettings();
             unsubMembers();
-            unsubHistory();
         };
     }, [router]);
 
@@ -235,9 +217,9 @@ export default function Dashboard() {
             </div>
 
             {/* Live List */}
-            <div className="mb-12">
+            <div>
                 <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-xl font-bold font-outfit">Live Round Members</h3>
+                    <h3 className="text-xl font-bold font-outfit">Members List</h3>
                     <span className="bg-surface-800 px-3 py-1 rounded-full text-sm font-medium text-surface-400 border border-white/5">
                         {members.length} / {settings.memberCount} Participants
                     </span>
@@ -277,65 +259,13 @@ export default function Dashboard() {
                             </motion.div>
                         ))}
                     </AnimatePresence>
+                    {members.length === 0 && (
+                        <div className="col-span-full py-12 text-center text-surface-500">
+                            No members have joined yet.
+                        </div>
+                    )}
                 </div>
             </div>
-
-            {/* History List */}
-            {history && Object.keys(history).some(key => user.phone === 'admin' || history[key].members?.some((m: any) => m.phone === user.phone)) && (
-                <div className="mt-12 pt-12 border-t border-surface-800">
-                    <h3 className="text-xl font-bold font-outfit mb-6">Past Round History</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {Object.keys(history).reverse().filter(roundKey => {
-                            if (user.phone === 'admin') return true;
-                            return history[roundKey].members?.some((m: any) => m.phone === user.phone);
-                        }).map((roundKey) => (
-                            <button
-                                key={roundKey}
-                                onClick={() => setViewingHistory(viewingHistory === roundKey ? null : roundKey)}
-                                className={cn(
-                                    "p-6 rounded-3xl border transition-all text-left",
-                                    viewingHistory === roundKey
-                                        ? "bg-brand-500/10 border-brand-500 shadow-lg shadow-brand-500/10"
-                                        : "bg-surface-800/20 border-white/5 hover:border-white/10"
-                                )}
-                            >
-                                <p className="text-brand-400 font-bold capitalize mb-1">{roundKey.replace('_', ' ')}</p>
-                                <p className="text-surface-500 text-xs mb-3">{new Date(history[roundKey].timestamp).toLocaleDateString()}</p>
-                                <p className="text-white text-sm font-medium">{history[roundKey].members?.length || 0} Members</p>
-                            </button>
-                        ))}
-                    </div>
-
-                    <AnimatePresence>
-                        {viewingHistory && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: 20 }}
-                                className="mt-8 p-6 glass-panel rounded-3xl border border-brand-500/20"
-                            >
-                                <div className="flex justify-between items-center mb-6">
-                                    <h4 className="text-lg font-bold text-white capitalize">{viewingHistory.replace('_', ' ')} Details</h4>
-                                    <button
-                                        onClick={() => setViewingHistory(null)}
-                                        className="text-surface-500 hover:text-white text-sm"
-                                    >
-                                        Close
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                                    {history[viewingHistory].members.sort((a: any, b: any) => a.drawnNumber - b.drawnNumber).map((m: any) => (
-                                        <div key={m.phone} className="flex items-center justify-between p-3 bg-surface-900/50 rounded-xl border border-white/5">
-                                            <span className="text-surface-400 text-sm truncate mr-2">{m.name}</span>
-                                            <span className="text-brand-400 font-black">#{m.drawnNumber}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-            )}
         </div>
     );
 }
