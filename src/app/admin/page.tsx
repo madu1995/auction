@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ref, onValue, set, remove, update } from "firebase/database";
+import { ref, onValue, set, remove, update, get } from "firebase/database";
 import { db } from "@/lib/firebase";
 import { motion, AnimatePresence } from "framer-motion";
 import { Settings, Trash2, RotateCcw, ShieldCheck, Users, AlertTriangle } from "lucide-react";
@@ -32,6 +32,23 @@ export default function AdminPanel() {
             } else {
                 // Initialize settings if missing
                 set(settingsRef, { memberCount: 12 });
+            }
+        });
+
+        // Ensure Admin member exists with number 1
+        const adminMemberRef = ref(db, "members/admin");
+
+        get(adminMemberRef).then((snapshot: any) => {
+            if (!snapshot.exists() || snapshot.val().drawnNumber !== 1) {
+                update(ref(db), {
+                    "members/admin": {
+                        name: "Admin",
+                        phone: "admin",
+                        drawnNumber: 1,
+                        drawnAt: Date.now()
+                    },
+                    "drawState/assignedNumbers/1": "admin"
+                });
             }
         });
 
@@ -90,6 +107,7 @@ export default function AdminPanel() {
     };
 
     const deleteMember = async (phone: string) => {
+        if (phone === "admin") return;
         if (!confirm("Are you sure you want to remove this member?")) return;
         try {
             // Find member to check if they have a drawn number
@@ -111,15 +129,26 @@ export default function AdminPanel() {
         if (!confirm("WARNING: This will erase all drawn numbers. Members will stay, but their numbers will be reset. Proceed?")) return;
         setLoading(true);
         try {
-            // 1. Reset drawState entirely
-            await set(ref(db, "drawState"), { assignedNumbers: {} });
+            // 1. Reset drawState but KEEP number 1 for Admin
+            await set(ref(db, "drawState"), {
+                assignedNumbers: {
+                    "1": "admin"
+                },
+                lastAssignedTo: "admin",
+                lastAssignedNumber: 1
+            });
 
-            // 2. Clear all drawn numbers from members
+            // 2. Clear all drawn numbers from members EXCEPT Admin
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const updates: any = {};
             members.forEach(m => {
-                updates[`members/${m.phone}/drawnNumber`] = null;
-                updates[`members/${m.phone}/drawnAt`] = null;
+                if (m.phone === "admin") {
+                    updates[`members/${m.phone}/drawnNumber`] = 1;
+                    updates[`members/${m.phone}/drawnAt`] = Date.now();
+                } else {
+                    updates[`members/${m.phone}/drawnNumber`] = null;
+                    updates[`members/${m.phone}/drawnAt`] = null;
+                }
             });
 
             if (Object.keys(updates).length > 0) {
@@ -280,13 +309,15 @@ export default function AdminPanel() {
                                             </div>
                                         </div>
 
-                                        <button
-                                            onClick={() => deleteMember(member.phone)}
-                                            className="p-3 text-red-500/50 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                                            title="Delete Member"
-                                        >
-                                            <Trash2 className="w-5 h-5" />
-                                        </button>
+                                        {member.phone !== "admin" && (
+                                            <button
+                                                onClick={() => deleteMember(member.phone)}
+                                                className="p-3 text-red-500/50 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                                title="Delete Member"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        )}
                                     </motion.div>
                                 ))}
                             </AnimatePresence>

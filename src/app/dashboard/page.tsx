@@ -89,9 +89,9 @@ export default function Dashboard() {
                     return undefined; // Already drawn (prevents overwrite)
                 }
 
-                // Available numbers between 1 and memberCount
+                // Available numbers between 2 and memberCount
                 const available = [];
-                for (let i = 1; i <= settings.memberCount; i++) {
+                for (let i = 2; i <= settings.memberCount; i++) {
                     if (!state.assignedNumbers[i]) {
                         available.push(i);
                     }
@@ -160,7 +160,7 @@ export default function Dashboard() {
 
             <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 pb-6 border-b border-surface-700/50 gap-4">
                 <div>
-                    <h1 className="text-3xl font-black font-outfit text-white">Live <span className="gradient-text">Draw</span> Dashboard</h1>
+                    <h1 className="text-3xl font-black font-outfit text-white">Online <span className="gradient-text">Settuwa</span> Dashboard</h1>
                     <p className="text-surface-400">Welcome, <span className="font-semibold text-white">{user.name}</span></p>
                 </div>
 
